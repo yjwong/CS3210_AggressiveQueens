@@ -240,16 +240,34 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     }
 
     // Check occupied positions on row.
-    for (int i = 0; i < board->size; ++i) {
+    // Left direction.
+    for (int i = col; i >= 0; --i) {
         if (board_is_occupied(board, row, i)) {
             attack_count++;
+            break;
+        }
+    }
+
+    // Right direction.
+    for (int i = col; i < board->size; ++i) {
+        if (board_is_occupied(board, row, i)) {
+            attack_count++;
+            break;
         }
     }
 
     // Check occupied positions on column.
-    for (int i = 0; i < board->size; ++i) {
+    for (int i = col; i >= 0; --i) {
         if (board_is_occupied(board, i, col)) {
             attack_count++;
+            break;
+        }
+    }
+
+    for (int i = col; i < board->size; ++i) {
+        if (board_is_occupied(board, i, col)) {
+            attack_count++;
+            break;
         }
     }
 
@@ -259,6 +277,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     while (i >= 0 && j >= 0) {
         if (board_is_occupied(board, i, j)) {
             attack_count++;
+            break;
         }
         
         i--;
@@ -271,6 +290,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     while (i >= 0 && j < board->size) {
         if (board_is_occupied(board, i, j)) {
             attack_count++;
+            break;
         }
         
         i--;
@@ -283,6 +303,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     while (i < board->size && j >= 0) {
         if (board_is_occupied(board, i, j)) {
             attack_count++;
+            break;
         }
         
         i++;
@@ -295,6 +316,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     while (i < board->size && j < board->size) {
         if (board_is_occupied(board, i, j)) {
             attack_count++;   
+            break;
         }
         
         i++;

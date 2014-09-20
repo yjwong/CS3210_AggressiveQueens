@@ -156,7 +156,7 @@ void godFunction(struct program_args *args) {
         if (!move.applied) {
             while (1) {
                 num_attacks = board_cell_count_attacks(&board, move.row, move.col);
-                if (num_attacks == args->k) {
+                if (num_attacks != -1 && num_attacks <= args->k) {
                     break;
                 }
 
@@ -198,10 +198,8 @@ void godFunction(struct program_args *args) {
             moves_generated = 0;
             for (i = 0; i < args->N; ++i) {
                 for (j = 0; j < args->N; ++j) {
-                    if (i != move.row && j != move.col && // Next option cannot be on same row or column
-                        !(abs(move.row - i) % abs(move.col - j) == 0 &&
-                          abs(move.row - i) / abs(move.col - j) / 1 == 1) && // Next option cannot be on diagonal
-                        board_cell_count_attacks(&board, i, j) == args->k) { // Must be exactly attackable k times
+                    num_attacks = board_cell_count_attacks(&board, i, j);
+                    if (num_attacks != -1 && num_attacks <= args->k) { // Must be exactly attackable k times
                         next_move.row = i;
                         next_move.col = j;
                         next_move.applied = 0;
