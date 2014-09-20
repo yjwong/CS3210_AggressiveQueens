@@ -19,7 +19,7 @@ fi
 if [ $BUILD_TYPE = "debug" ]; then
     CFLAGS="-g -O0"
 elif [ $BUILD_TYPE = "release" ]; then
-    CFLAGS="-O3"
+    CFLAGS="-O3 -DNDEBUG"
 elif [ $BUILD_TYPE = "clean" ]; then
     make clean
     exit

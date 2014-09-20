@@ -25,6 +25,15 @@
 #define AQ_BOARD_SLICES 25
 
 /**
+ * Defines the number of simulation boards that can be used to check the number
+ * of times a row or column on the board can be attacked.
+ *
+ * The default of 1024 boards should be sufficient for values of k up to 32 and
+ * board sizes up to 32.
+ */
+#define AQ_SIMULATION_BOARDS 1024
+
+/**
  * A structure that represents a chess board.
  * Contains bookkeeping information.
  */
@@ -208,31 +217,91 @@ void board_set_unoccupied(struct aq_board *board, int row, int col) {
 }
 
 /**
- * Checks if a position on the board is attackable.
- *
- * A position is attackable if and only if there exists an occupied slot on
- * the same row, column or diagonal as the position.
- *
- * XXX: This may be a potential target for optimization since it incurs at
- * least O(N^2) cost.
+ * Clears all values from the board.
  */
 inline
-int board_is_attackable(struct aq_board *board, int row, int col) {
-    struct aq_board simulation_board = board_new(board->size);
-    for (int i = 0; i < board->size; ++i) {
-        for (int j = 0; j < board->size; ++j) {
-            if (board_is_occupied(board, i, j)) {
-                board_set_row_occupied(&simulation_board, i);
-                board_set_col_occupied(&simulation_board, j);
-                board_set_diag_occupied(&simulation_board, i, j);
+void board_clear(struct aq_board *board) {
+    for (int i = 0; i < board->slices_occupied; ++i) {
+        board->slices[i] = 0;
+    }
+}
 
-                if (board_is_occupied(&simulation_board, row, col)) {
-                    return 1;
-                }
-            }
+/**
+ * Counts the number of times a position on the board is attackale.
+ * Returns -1 if the position is already occupied by a piece.
+ */
+inline
+int board_cell_count_attacks(struct aq_board *board, int row, int col) {
+    int attack_count = 0;
+
+    // We short circuit if the slot is already occupied.
+    if (board_is_occupied(board, row, col)) {
+        return -1;
+    }
+
+    // Check occupied positions on row.
+    for (int i = 0; i < board->size; ++i) {
+        if (board_is_occupied(board, row, i)) {
+            attack_count++;
         }
     }
-    return 0;
+
+    // Check occupied positions on column.
+    for (int i = 0; i < board->size; ++i) {
+        if (board_is_occupied(board, i, col)) {
+            attack_count++;
+        }
+    }
+
+    // Check occupied positions on diagonals.
+    // Top left direction.
+    int i = row, j = col;
+    while (i >= 0 && j >= 0) {
+        if (board_is_occupied(board, i, j)) {
+            attack_count++;
+        }
+        
+        i--;
+        j--;
+    }
+
+    // Top right direction.
+    i = row;
+    j = col;
+    while (i >= 0 && j < board->size) {
+        if (board_is_occupied(board, i, j)) {
+            attack_count++;
+        }
+        
+        i--;
+        j++;
+    }
+
+    // Bottom left direction.
+    i = row;
+    j = col;
+    while (i < board->size && j >= 0) {
+        if (board_is_occupied(board, i, j)) {
+            attack_count++;
+        }
+        
+        i++;
+        j--;
+    }
+
+    // Bottom right direction.
+    i = row;
+    j = col;
+    while (i < board->size && j < board->size) {
+        if (board_is_occupied(board, i, j)) {
+            attack_count++;   
+        }
+        
+        i++;
+        j++;
+    }
+
+    return attack_count;
 }
 
 /**

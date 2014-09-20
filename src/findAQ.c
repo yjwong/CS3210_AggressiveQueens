@@ -122,6 +122,116 @@ struct aq_stack prepareTaskStack(int N) {
 }
 
 /**
+ * Runs the Aggressive Queens algorithm.
+ */
+static inline
+void godFunction(struct program_args *args) {
+    // Use a simple integer for the board - we abuse the bits for queen
+    // positioning.
+    struct aq_board board = board_new(args->N);
+
+    // Prepare the task stack.
+    struct aq_stack stack = prepareTaskStack(args->N);
+    struct aq_stack stack_applied = stack_new();
+    struct aq_board solution_set[4096];
+    struct aq_move move;
+    struct aq_move next_move;
+    struct aq_move undo_move;
+    int num_solutions = 0;
+    int num_queens = 0;
+    int max_queens = 0;
+    int num_attacks = 0;
+    int moves_generated = 0;
+    int has_existing_solutions = 0;
+    int i = 0;
+    int j = 0;
+
+    // Some debugging information...
+    LOG("godFunction", "Board info: bits_occupied = %d, slices_occupied = %d\n",
+            board.bits_occupied, board.slices_occupied);
+
+    // Perform a depth first search.
+    while (!stack_empty(&stack)) {
+        move = stack_pop(&stack);
+        if (!move.applied) {
+            while (1) {
+                num_attacks = board_cell_count_attacks(&board, move.row, move.col);
+                if (num_attacks == args->k) {
+                    break;
+                }
+
+                undo_move = stack_pop(&stack_applied);
+                move_undo(&board, &undo_move);
+                LOG("godFunction", "Undoing move %d, %d", undo_move.row,
+                        undo_move.col);
+            }
+
+            // We only apply if we won't get attacked.
+            LOG("godFunction", "Applying move %d, %d", move.row, move.col);
+            move_apply(&board, &move);
+            stack_push(&stack_applied, move);
+            board_print(&board);
+
+            // Accumate solutions.
+            num_queens = board_count_occupied(&board);
+            if (num_queens >= max_queens) {
+                if (num_queens > max_queens) {
+                    num_solutions = 1;
+                    solution_set[0] = board;
+                    max_queens = num_queens;
+                } else {
+                    has_existing_solutions = 0;
+                    for (i = 0; i < num_solutions; ++i) {
+                        if (boards_are_equal(&solution_set[i], &board)) {
+                            has_existing_solutions = 1;
+                        }
+                    }
+
+                    if (!has_existing_solutions) {
+                        solution_set[num_solutions] = board;
+                        num_solutions++;
+                    }
+                }
+            }
+
+            // Generate moves.
+            moves_generated = 0;
+            for (i = 0; i < args->N; ++i) {
+                for (j = 0; j < args->N; ++j) {
+                    if (i != move.row && j != move.col && // Next option cannot be on same row or column
+                        !(abs(move.row - i) % abs(move.col - j) == 0 &&
+                          abs(move.row - i) / abs(move.col - j) / 1 == 1) && // Next option cannot be on diagonal
+                        board_cell_count_attacks(&board, i, j) == args->k) { // Must be exactly attackable k times
+                        next_move.row = i;
+                        next_move.col = j;
+                        next_move.applied = 0;
+
+                        LOG("godFunction", "Generating move %d, %d", i, j);
+                        stack_push(&stack, next_move);
+                        moves_generated++;
+                    }
+                }
+            }
+
+            // No more moves can be generated. Let's backtrack!
+            if (!moves_generated) {
+               undo_move = stack_pop(&stack_applied);
+               move_undo(&board, &undo_move);
+               LOG("godFunction", "Undoing move %d, %d", undo_move.row,
+                       undo_move.col);
+            }
+        }
+    }
+
+    printf("Number of solutions: %d\n", num_solutions);
+    printf("Maximum number of queens: %d\n", max_queens);
+
+    for (i = 0; i < num_solutions; ++i) {
+        board_print(&solution_set[i]);
+    }
+}
+
+/**
  * The algorithm is given 4 values: N and k, and the two controls l and w.
  * The meaning of the values are as follows:
  *
@@ -154,94 +264,17 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
     LOG(argv[0], "MPI_Comm_size=%d, MPI_Comm_rank=%d", mpi_nprocs, mpi_rank);
     
-    // Use a simple integer for the board - we abuse the bits for queen
-    // positioning.
-    struct aq_board board = board_new(args.N);
-    LOG(argv[0], "Board info: bits_occupied = %d, slices_occupied = %d\n",
-            board.bits_occupied, board.slices_occupied);
-
-    // Prepare the task stack.
-    struct aq_stack stack = prepareTaskStack(args.N);
-
-    // Perform a depth first search.
-    struct aq_board solution_set[4096];
-    int num_solutions = 0;
-    int max_queens = 0;
-
-    struct aq_stack stack_applied = stack_new();
-    while (!stack_empty(&stack)) {
-        struct aq_move move = stack_pop(&stack);
-        if (!move.applied) {
-            while (board_is_attackable(&board, move.row, move.col)) {
-                struct aq_move undo_move = stack_pop(&stack_applied);
-                move_undo(&board, &undo_move);
-                LOG(argv[0], "Undoing move %d, %d", undo_move.row, undo_move.col);
-            }
-
-            // We only apply if we won't get attacked.
-            LOG(argv[0], "Applying move %d, %d", move.row, move.col);
-            move_apply(&board, &move);
-            stack_push(&stack_applied, move);
-            //board_print(&board);
-
-            // Accumate solutions.
-            int num_queens = board_count_occupied(&board);
-            if (num_queens >= max_queens) {
-                if (num_queens > max_queens) {
-                    num_solutions = 1;
-                    solution_set[0] = board;
-                    max_queens = num_queens;
-                } else {
-                    int has_existing_solutions = 0;
-                    for (int i = 0; i < num_solutions; ++i) {
-                        if (boards_are_equal(&solution_set[i], &board)) {
-                            has_existing_solutions = 1;
-                        }
-                    }
-
-                    if (!has_existing_solutions) {
-                        solution_set[num_solutions] = board;
-                        num_solutions++;
-                    }
-                }
-            }
-
-            // Generate moves.
-            int moves_generated = 0;
-            for (int i = 0; i < args.N; ++i) {
-                for (int j = 0; j < args.N; ++j) {
-                    if (i != move.row && j != move.col && // Next option cannot be on same row or column
-                        !(abs(move.row - i) % abs(move.col - j) == 0 &&
-                          abs(move.row - i) / abs(move.col - j) / 1 == 1) && // Next option cannot be on diagonal
-                        !board_is_attackable(&board, i, j)) { // Cannot be attackable
-                        struct aq_move next_move;
-                        next_move.row = i;
-                        next_move.col = j;
-                        next_move.applied = 0;
-
-                        LOG(argv[0], "Generating move %d, %d", i, j);
-                        stack_push(&stack, next_move);
-                        moves_generated++;
-                    }
-                }
-            }
-
-            // No more moves can be generated. Let's backtrack!
-            if (!moves_generated) {
-               struct aq_move undo_move = stack_pop(&stack_applied);
-               move_undo(&board, &undo_move);
-               LOG(argv[0], "Undoing move %d, %d", undo_move.row, undo_move.col);
-            }
-        }
-    }
+    // Run the AQ solver.
+    godFunction(&args);
     
-    printf("Number of solutions: %d\n", num_solutions);
-    printf("Maximum number of queens: %d\n", max_queens);
-
-    for (int i = 0; i < num_solutions; ++i) {
-        board_print(&solution_set[i]);
-    }
-
+    /*
+    struct aq_board test_board = board_new(args.N);
+    board_set_occupied(&test_board, 0, 0);
+    board_set_occupied(&test_board, 2, 3);
+    board_print(&test_board);
+    printf("%d\n", board_cell_count_attacks(&test_board, 0, 1));
+    */
+    
     MPI_Finalize();
     return EXIT_OK;
 }
