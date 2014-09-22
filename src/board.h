@@ -241,31 +241,33 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
 
     // Check occupied positions on row.
     // Left direction.
-    for (int i = col; i >= 0; --i) {
-        if (board_is_occupied(board, row, i)) {
+    for (int i = row; i >= 0; --i) {
+        if (board_is_occupied(board, i, col)) {
             attack_count++;
             break;
         }
     }
 
     // Right direction.
-    for (int i = col; i < board->size; ++i) {
+    for (int i = row; i < board->size; ++i) {
+        if (board_is_occupied(board, i, col)) {
+            attack_count++;
+            break;
+        }
+    }
+    
+    // Check occupied positions on column.
+    // Top direction.
+    for (int i = col; i >= 0; --i) {
         if (board_is_occupied(board, row, i)) {
             attack_count++;
             break;
         }
     }
 
-    // Check occupied positions on column.
-    for (int i = col; i >= 0; --i) {
-        if (board_is_occupied(board, i, col)) {
-            attack_count++;
-            break;
-        }
-    }
-
+    // Bottom direction.
     for (int i = col; i < board->size; ++i) {
-        if (board_is_occupied(board, i, col)) {
+        if (board_is_occupied(board, row, i)) {
             attack_count++;
             break;
         }
@@ -324,6 +326,73 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     }
 
     return attack_count;
+}
+
+/**
+ * Returns the maximum number of attacks on every occupied position on the
+ * board.
+ */
+inline
+int board_max_attacks(struct aq_board *board) {
+    int max_attacks = 0;
+    int num_attacks = 0;
+
+    for (int i = 0; i < board->size; ++i) {
+        for (int j = 0; j < board->size; ++j) {
+            if (board_is_occupied(board, i, j)) {
+                struct aq_board simulation_board = *board;
+                board_set_unoccupied(&simulation_board, i, j);
+
+                num_attacks = board_cell_count_attacks(&simulation_board, i, j);
+                if (num_attacks > max_attacks) {
+                    max_attacks = num_attacks;
+                }
+            }
+        }
+    }
+
+    return max_attacks;
+}
+
+/**
+ * Simulates the maximum number of attacks on every occupied position on the
+ * board.
+ */
+inline
+int board_simulate_max_attacks(struct aq_board *board, int row, int col) {
+    struct aq_board simulation_board = *board;
+    board_set_occupied(&simulation_board, row, col);
+    return board_max_attacks(&simulation_board);
+}
+
+/**
+ * Returns non-zero if the number of attacks on every occupied position on the
+ * board is the same, zero otherwise.
+ */
+inline
+int board_all_has_same_attacks(struct aq_board *board) {
+    int prev_attacks = -1;
+    int attacks = 0;
+
+    for (int i = 0; i < board->size; ++i) {
+        for (int j = 0; j < board->size; ++j) {
+            if (board_is_occupied(board, i, j)) {
+                struct aq_board simulation_board = *board;
+                board_set_unoccupied(&simulation_board, i, j);
+
+                attacks = board_cell_count_attacks(&simulation_board, i, j);
+                if (prev_attacks == -1) {
+                    prev_attacks = attacks;
+                }
+
+                if (prev_attacks != attacks) {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    return 1;
 }
 
 /**

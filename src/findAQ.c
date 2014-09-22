@@ -141,6 +141,7 @@ void godFunction(struct program_args *args) {
     int num_queens = 0;
     int max_queens = 0;
     int num_attacks = 0;
+    int max_attacks = 0;
     int moves_generated = 0;
     int has_existing_solutions = 0;
     int i = 0;
@@ -171,10 +172,13 @@ void godFunction(struct program_args *args) {
             move_apply(&board, &move);
             stack_push(&stack_applied, move);
             board_print(&board);
-
+            
             // Accumate solutions.
             num_queens = board_count_occupied(&board);
-            if (num_queens >= max_queens) {
+            max_attacks = board_max_attacks(&board);
+            if (num_queens >= max_queens && max_attacks == args->k &&
+                board_all_has_same_attacks(&board)) {
+                LOG("godFunction", " ^ this is a solution");
                 if (num_queens > max_queens) {
                     num_solutions = 1;
                     solution_set[0] = board;
@@ -198,8 +202,11 @@ void godFunction(struct program_args *args) {
             moves_generated = 0;
             for (i = 0; i < args->N; ++i) {
                 for (j = 0; j < args->N; ++j) {
-                    num_attacks = board_cell_count_attacks(&board, i, j);
-                    if (num_attacks != -1 && num_attacks <= args->k) { // Must be exactly attackable k times
+                    // Even though some of these conditions imply each other,
+                    // they are included for performance reasons.
+                    if (!board_is_occupied(&board, i, j) &&
+                        board_cell_count_attacks(&board, i, j) <= args->k &&
+                        board_simulate_max_attacks(&board, i, j) <= args->k) {
                         next_move.row = i;
                         next_move.col = j;
                         next_move.applied = 0;
@@ -264,15 +271,19 @@ int main(int argc, char* argv[]) {
     
     // Run the AQ solver.
     godFunction(&args);
-    
-    /*
-    struct aq_board test_board = board_new(args.N);
-    board_set_occupied(&test_board, 0, 0);
-    board_set_occupied(&test_board, 2, 3);
+   
+    /* 
+    struct aq_board test_board = board_new(5);
+    board_set_occupied(&test_board, 0, 4);
+    board_set_occupied(&test_board, 1, 4);
+    board_set_occupied(&test_board, 2, 0);
+    board_set_occupied(&test_board, 2, 1);
+    board_set_occupied(&test_board, 3, 4);
     board_print(&test_board);
-    printf("%d\n", board_cell_count_attacks(&test_board, 0, 1));
+    board_set_unoccupied(&test_board, 0, 4);
+    printf("%d\n", board_cell_count_attacks(&test_board, 0, 4));
     */
-    
+
     MPI_Finalize();
     return EXIT_OK;
 }
