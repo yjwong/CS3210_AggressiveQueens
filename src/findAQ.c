@@ -84,8 +84,8 @@ int readProgramArgs(int argc, char* argv[], struct program_args* program_args) {
     }
 
     // Check if the values are sane.
-    if (program_args->N <= 3) {
-        fprintf(stderr, "N must be larger than 3.\n");
+    if (program_args->N <= 2) {
+        fprintf(stderr, "N must be equal or larger than 3.\n");
         return EXIT_ARGS_INVALID;
     }
 
