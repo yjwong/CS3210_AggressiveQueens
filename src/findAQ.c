@@ -171,7 +171,7 @@ void godFunction(struct program_args *args) {
             LOG("godFunction", "Applying move %d, %d", move.row, move.col);
             move_apply(&board, &move);
             stack_push(&stack_applied, move);
-            board_print(&board);
+            //board_print(&board);
             
             // Accumate solutions.
             num_queens = board_count_occupied(&board);
