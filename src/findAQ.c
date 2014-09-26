@@ -104,17 +104,26 @@ static inline
 struct aq_stack prepareTaskStack(int N) {
     // Prepare a stack of initial moves.
     struct aq_stack stack = stack_new();
-    int num_positions = N * N;
-    struct aq_move initial_moves[num_positions];
+    struct aq_move initial_move;
+    int mpi_rank;
+    int mpi_nprocs;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    LOG("prepareTaskStack", "MPI_Comm_size=%d, MPI_Comm_rank=%d", mpi_nprocs,
+            mpi_rank);
+
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
-            int offset = i * N + j;
-            initial_moves[offset].row = i;
-            initial_moves[offset].col = j;
-            initial_moves[offset].applied = 0;
-            
-            LOG("prepareTaskStack", "Generating move %d, %d", i, j);
-            stack_push(&stack, initial_moves[offset]);
+            int proc_id = (i * N + j) % mpi_nprocs;
+            if (proc_id == mpi_rank) {
+                initial_move.row = i;
+                initial_move.col = j;
+                initial_move.applied = 0;
+                
+                LOG("prepareTaskStack", "[%d] Generating move %d, %d", proc_id, i, j);
+                stack_push(&stack, initial_move);
+            }
         }
     }
     
@@ -141,17 +150,23 @@ void godFunction(struct program_args *args) {
     int num_queens = 0;
     int max_queens = 0;
     int num_attacks = 0;
-    int max_attacks = 0;
     int moves_generated = 0;
     int has_existing_solutions = 0;
     int depth = 0;
     int i = 0;
     int j = 0;
 
+    // MPI information.
+    int mpi_rank;
+    int mpi_nprocs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
+
     // Some debugging information...
     LOG("godFunction", "Board info: bits_occupied = %d, slices_occupied = %d\n",
             board.bits_occupied, board.slices_occupied);
 
+    stack_dump(&stack);
     // Perform a depth first search.
     while (!stack_empty(&stack)) {
         LOG("godFunction", "Dump of working stack:");
@@ -160,12 +175,20 @@ void godFunction(struct program_args *args) {
         //stack_dump(&stack_applied);
         move = stack_pop(&stack);
         if (!move.applied) {
-            num_attacks = board_cell_count_attacks(&board, move.row, move.col);
-            LOG("godFunction", "num_attacks=%d", num_attacks);
-            if (num_attacks == -1 || num_attacks > args->k) {
-                continue;
+            // Discard impossible moves.
+            while (!stack_empty(&stack_applied)) {
+                undo_move = stack_peek(&stack_applied);
+                if (undo_move.depth >= move.depth) {
+                    stack_pop(&stack_applied);
+                    move_undo(&board, &undo_move);
+                    LOG("godFunction", "Undoing move %d, %d, depth=%d", undo_move.row,
+                            undo_move.col, depth);
+                } else {
+                    depth--;
+                    break;
+                }
             }
-
+            
             // We only apply if we won't get attacked.
             LOG("godFunction", "Applying move %d, %d, depth=%d, move.depth=%d",
                     move.row, move.col, depth, move.depth);
@@ -176,8 +199,8 @@ void godFunction(struct program_args *args) {
             
             // Accumate solutions.
             num_queens = board_count_occupied(&board);
-            max_attacks = board_max_attacks(&board);
-            if (num_queens >= max_queens && max_attacks == args->k &&
+            if (num_queens >= max_queens &&
+                board_max_attacks(&board) == args->k &&
                 board_all_has_same_attacks(&board)) {
                 LOG("godFunction", " ^ this is a solution");
                 if (num_queens > max_queens) {
@@ -205,17 +228,19 @@ void godFunction(struct program_args *args) {
                 for (j = 0; j < args->N; ++j) {
                     // Even though some of these conditions imply each other,
                     // they are included for performance reasons.
-                    if (!board_is_occupied(&board, i, j) &&
-                        board_cell_count_attacks(&board, i, j) <= args->k &&
-                        board_simulate_max_attacks(&board, i, j) <= args->k) {
-                        next_move.row = i;
-                        next_move.col = j;
-                        next_move.applied = 0;
-                        next_move.depth = depth + 1;
+                    if (!board_is_occupied(&board, i, j)) {
+                            num_attacks = board_cell_count_attacks(&board, i, j);
+                            if (num_attacks != -1 && num_attacks <= args->k &&
+                                board_simulate_max_attacks(&board, i, j) <= args->k) {
+                            next_move.row = i;
+                            next_move.col = j;
+                            next_move.applied = 0;
+                            next_move.depth = depth + 1;
 
-                        LOG("godFunction", "Generating move %d, %d, depth=%d", i, j, next_move.depth);
-                        stack_push(&stack, next_move);
-                        moves_generated++;
+                            LOG("godFunction", "Generating move %d, %d, depth=%d", i, j, next_move.depth);
+                            stack_push(&stack, next_move);
+                            moves_generated++;
+                        }
                     }
                 }
             }
@@ -230,29 +255,69 @@ void godFunction(struct program_args *args) {
                 depth++;
             }
 
-            // Discard impossible moves.
-            while (!stack_empty(&stack_applied)) {
-                next_move = stack_peek(&stack);
-                undo_move = stack_peek(&stack_applied);
-
-                if (undo_move.depth >= next_move.depth) {
-                    stack_pop(&stack_applied);
-                    move_undo(&board, &undo_move);
-                    LOG("godFunction", "Undoing move %d, %d, depth=%d", undo_move.row,
-                            undo_move.col, depth);
-                } else {
-                    depth--;
-                    break;
-                }
-            }
         }
     }
 
-    printf("Number of solutions: %d\n", num_solutions);
-    printf("Maximum number of queens: %d\n", max_queens);
+    // Declare a new type to MPI.
+    struct aq_board mpi_board;
+    MPI_Datatype mpi_aq_board_type;
+    int mpi_aq_board_blocklen[4] = { AQ_BOARD_SLICES, 1, 1, 1 };
+    MPI_Datatype mpi_aq_board_blocktype[4] = {
+        MPI_UINT64_T,
+        MPI_INT,
+        MPI_INT,
+        MPI_INT
+    };
+    MPI_Aint mpi_aq_board_disp[4];
+    mpi_aq_board_disp[0] = (void*) &mpi_board.slices - (void*) &mpi_board;
+    mpi_aq_board_disp[1] = (void*) &mpi_board.size - (void*) &mpi_board;
+    mpi_aq_board_disp[2] = (void*) &mpi_board.bits_occupied - (void*) &mpi_board;
+    mpi_aq_board_disp[3] = (void*) &mpi_board.slices_occupied - (void*) &mpi_board;
+    MPI_Type_create_struct(4, mpi_aq_board_blocklen, mpi_aq_board_disp, 
+            mpi_aq_board_blocktype, &mpi_aq_board_type);
+    MPI_Type_commit(&mpi_aq_board_type);
 
-    for (i = 0; i < num_solutions; ++i) {
-        board_print(&solution_set[i]);
+    // Send the solution set over.
+    struct aq_board gathered_solution_set[mpi_nprocs][4096];
+    int gathered_num_solutions[mpi_nprocs];
+    MPI_Gather(&num_solutions, 1, MPI_INT, &gathered_num_solutions, 1, MPI_INT, 0,
+            MPI_COMM_WORLD);
+    MPI_Gather(solution_set, 4096, mpi_aq_board_type,
+            &gathered_solution_set[mpi_rank], 4096, mpi_aq_board_type, 0,
+            MPI_COMM_WORLD);
+
+    // Integrate all the solutions.
+    if (mpi_rank == 0) {
+        for (int i = 0; i < mpi_nprocs; ++i) {
+            printf("Number of solutions from %d: %d\n", i, gathered_num_solutions[i]);
+        }
+
+        // Remove the duplicates.
+        struct aq_board all_solution_set[4096];
+        int all_num_solutions = 0;
+        for (i = 0; i < mpi_nprocs; ++i) {
+            for (j = 0; j < gathered_num_solutions[i]; ++j) {
+                has_existing_solutions = 0;
+                for (int k = 0; k < all_num_solutions; ++k) {
+                    if (boards_are_equal(&gathered_solution_set[i][j], &all_solution_set[k])) {
+                        has_existing_solutions++;
+                        break;
+                    }
+                }
+
+                if (!has_existing_solutions) {
+                    all_solution_set[all_num_solutions] = gathered_solution_set[i][j];
+                    all_num_solutions++;
+                }
+            }
+        }
+
+        printf("Number of solutions: %d\n", all_num_solutions);
+        printf("Maximum number of queens: %d\n", max_queens);
+        
+        for (i = 0; i < all_num_solutions; ++i) {
+            board_print(&all_solution_set[i]);
+        }
     }
 }
 
@@ -281,28 +346,11 @@ int main(int argc, char* argv[]) {
         args.k, args.l, args.w);
     
     // Initialize MPI.
-    int mpi_nprocs;
-    int mpi_rank;
     LOG(argv[0], "Initializing MPI...");
     MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
-    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-    LOG(argv[0], "MPI_Comm_size=%d, MPI_Comm_rank=%d", mpi_nprocs, mpi_rank);
     
     // Run the AQ solver.
     godFunction(&args);
-   
-    /* 
-    struct aq_board test_board = board_new(5);
-    board_set_occupied(&test_board, 0, 4);
-    board_set_occupied(&test_board, 1, 4);
-    board_set_occupied(&test_board, 2, 0);
-    board_set_occupied(&test_board, 2, 1);
-    board_set_occupied(&test_board, 3, 4);
-    board_print(&test_board);
-    board_set_unoccupied(&test_board, 0, 4);
-    printf("%d\n", board_cell_count_attacks(&test_board, 0, 4));
-    */
 
     MPI_Finalize();
     return EXIT_OK;
