@@ -329,6 +329,288 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
 }
 
 /**
+ * Counts the number of times a position on the board is attackale.
+ * Returns -1 if the position is already occupied by a piece.
+ */
+inline
+int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
+    int attack_count = 0;
+    int attacks[20];
+    int bs = board->size * board->size;
+    for (int i = 0; i < 20; i++) {
+        attacks[i] = -1;    
+    }    
+    
+
+    // We short circuit if the slot is already occupied.
+    if (board_is_occupied(board, row, col)) {
+        return -1;
+    }
+
+    // Check occupied positions on row.
+    // Left direction.
+    for (int i = row; i >= 0; --i) {
+        if (board_is_occupied(board, i, col)) {
+            if(attacks[0] == -1) {
+                attacks[0] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);
+            } else {
+                attacks[1] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);
+            }
+        }
+    }
+
+    // Right direction.
+    for (int i = row; i < board->size; ++i) {
+        if (board_is_occupied(board, i, col)) {
+            if(attacks[2] == -1) {
+                attacks[2] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);
+            } else {
+                attacks[3] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);            
+            }
+        }
+    }
+    
+    // Check occupied positions on column.
+    // Top direction.
+    for (int i = col; i >= 0; --i) {
+        if (board_is_occupied(board, row, i)) {
+            if(attacks[4] == -1) {
+                attacks[4] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);
+            } else {
+                attacks[5] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);          
+            }
+        }
+    }
+
+    // Bottom direction.
+    for (int i = col; i < board->size; ++i) {
+        if (board_is_occupied(board, row, i)) {
+            if(attacks[6] == -1) {
+                attacks[6] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);
+            } else {
+                attacks[7] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);            
+            }
+        }
+    }
+    
+    ////////////////////////////////////////
+    // Check occupied positions on diagonals.
+    // Top left direction.
+    int i = row, j = col;
+    while (i >= 0 && j >= 0) {
+        if (board_is_occupied(board, i, j)) {
+            if(attacks[8] == -1) {
+                attacks[8] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+            } else {
+                attacks[9] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+            }
+        }
+        
+        i--;
+        j--;
+    }
+
+    
+    // Bottom right direction.
+    i = row;
+    j = col;
+    while (i < board->size && j < board->size) {
+        if (board_is_occupied(board, i, j)) {
+            if(attacks[10] == -1) {
+                attacks[10] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+            } else {
+                attacks[11] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+            }
+        }
+        
+        i++;
+        j++;
+    }
+    
+    //if not in center diagonal
+    if (!(attacks[8] != -1 && attacks [10] != -1) && !(i == board->size && j == board->size)) {
+        if (i >= board->size) {
+            i -= board->size;        
+        } else {
+            j -= board->size;        
+        }     
+    
+        while (i < board->size && j < board->size) {
+            if (board_is_occupied(board, i, j)) {
+                if(attacks[12] == -1) {
+                    attacks[12] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                } else {
+                    attacks[13] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                }
+            }
+            
+            i++;
+            j++;
+        } 
+    }
+
+    ///////////////////////////////////////
+
+    // Top right direction.
+    i = row;
+    j = col;
+    while (i >= 0 && j < board->size) {
+        if (board_is_occupied(board, i, j)) {
+            if(attacks[14] == -1) {
+                attacks[14] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+            } else {
+                attacks[15] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+            }
+        }
+        
+        i--;
+        j++;
+    }
+
+    // Bottom left direction.
+    i = row;
+    j = col;
+    while (i < board->size && j >= -1) {
+        if (board_is_occupied(board, i, j)) {
+            if(attacks[16] == -1) {
+                attacks[16] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+            } else {
+                attacks[17] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+            }
+        }
+        
+        i++;
+        j--;
+    }
+    
+    // not in the center diagonal
+    if (!(attacks[14] != -1 && attacks[16] != -1) && !(i == board->size && j == -1)) {
+        if (i >= board->size) {
+            i -= board->size;        
+        } else {
+            j += board->size;        
+        }     
+    
+        while (i < board->size && j >= -1) {
+            if (board_is_occupied(board, i, j)) {
+                if(attacks[18] == -1) {
+                    attacks[18] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                } else {
+                    attacks[19] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                }
+            }
+            
+            i++;
+            j--;
+        }  
+    }
+    ///////////////////////////
+    if (attacks[0] == -1) {
+        if (attacks[2] != -1) {
+            attack_count++;
+            if (attacks[3] != -1) {
+                attack_count++;
+            }
+        }
+    } else {
+        if (attacks[2] != -1) {
+            attack_count += 2;        
+        } else {
+            if(attacks[1] != -1) {
+                attack_count++;            
+            }        
+        }
+    }
+
+    if (attacks[4] == -1) {
+        if (attacks[6] != -1) {
+            attack_count++;
+            if (attacks[7] != -1) {
+                attack_count++;
+            }
+        }
+    } else {
+        if (attacks[6] != -1) {
+            attack_count += 2;        
+        } else {
+            if(attacks[5] != -1) {
+                attack_count++;            
+            }        
+        }
+    }
+    
+    int a = -1, b = -1, c = -1, d = -1;
+    // 8-13 // 14-19
+    if (attacks[8] == -1) {
+        if (attacks[10] == -1) {
+            a = attacks[12];
+            b = attacks[13];        
+        } else {
+            a = attacks[10]; 
+            if (attacks[13] != -1) {
+                b = attacks[13];
+            } else if (attacks[12] != -1) {
+                b = attacks[12];
+            } else if (attacks[11] != -1) {
+                b = attacks[11];
+            }
+        }
+    } else {
+        if (attacks[10] == -1) {
+            a = attacks[8];
+            if (attacks[12] != -1) {
+                b = attacks[12];
+            } else if (attacks[13] != -1) {
+                b = attacks[13];
+            } else if (attacks[9] != -1) {
+                b = attacks[9];
+            }
+        } else {
+            a = attacks[8];
+            b = attacks[10];
+        }
+    }
+
+    if (attacks[14] == -1) {
+        if (attacks[16] == -1) {
+            c = attacks[18];
+            d = attacks[19];        
+        } else {
+            c = attacks[16]; 
+            if (attacks[19] != -1) {
+                d = attacks[19];
+            } else if (attacks[18] != -1) {
+                d = attacks[18];
+            } else if (attacks[17] != -1) {
+                d = attacks[17];
+            }
+        }
+    } else {
+        if (attacks[16] == -1) {
+            c = attacks[14];
+            if (attacks[18] != -1) {
+                d = attacks[18];
+            } else if (attacks[19] != -1) {
+                d = attacks[19];
+            } else if (attacks[15] != -1) {
+                d = attacks[15];
+            }
+        } else {
+            c = attacks[14];
+            d = attacks[16];
+        }
+    }
+
+    if (a != -1) attack_count++;
+    if (b != -1 && b != a) attack_count ++;
+    if (c != -1 && c != a && c != b) attack_count++;
+    if (d != -1 && d != c && d != b && d != a) attack_count++;
+
+    return attack_count;
+}
+
+
+/**
  * Returns the maximum number of attacks on every occupied position on the
  * board.
  */

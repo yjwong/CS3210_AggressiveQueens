@@ -18,6 +18,7 @@ extern void board_set_diag_occupied(struct aq_board*, int, int);
 extern void board_set_unoccupied(struct aq_board*, int, int);
 extern void board_clear(struct aq_board*);
 extern int board_cell_count_attacks(struct aq_board*, int, int);
+extern int board_cell_count_attacks_wrap(struct aq_board*, int, int);
 extern int board_max_attacks(struct aq_board*);
 extern int board_simulate_max_attacks(struct aq_board*, int, int);
 extern int board_all_has_same_attacks(struct aq_board*);

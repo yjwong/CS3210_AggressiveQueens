@@ -22,6 +22,7 @@
 #include "move.h"
 
 static const int NUM_REQUIRED_ARGS = 5;
+static const int MAX_SOLUTION_SET_SIZE = 4096;
 
 static const int EXIT_OK = 0;
 static const int EXIT_NUM_ARGS_INCORRECT = 1;
@@ -42,8 +43,8 @@ struct program_args {
  * Function prototypes.
  */
 int readProgramArgs(int, char**, struct program_args*);
-int isConfigurationSafe(int);
-int getNumberOfAttacks(int, int, int);
+static inline void godFunction(struct program_args*);
+static inline void gatherResults(int, int, struct aq_board*);
 
 /**
  * Reads the arguments for the program.
@@ -131,6 +132,95 @@ struct aq_stack prepareTaskStack(int N) {
 }
 
 /**
+ * Gathers results of the computation.
+ */
+static inline
+void gatherResults(int num_solutions, int max_queens,
+        struct aq_board* solution_set) {
+    int i, j, k;
+    int has_existing_solutions;
+
+    int all_num_solutions;
+    int all_max_queens;
+    struct aq_board all_solution_set[MAX_SOLUTION_SET_SIZE];
+
+    // MPI information.
+    int mpi_rank;
+    int mpi_nprocs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
+
+    // Declare a new type to MPI.
+    struct aq_board mpi_board;
+    MPI_Datatype mpi_aq_board_type;
+    int mpi_aq_board_blocklen[4] = { AQ_BOARD_SLICES, 1, 1, 1 };
+    MPI_Datatype mpi_aq_board_blocktype[4] = {
+        MPI_UINT64_T,
+        MPI_INT,
+        MPI_INT,
+        MPI_INT
+    };
+    MPI_Aint mpi_aq_board_disp[4];
+    mpi_aq_board_disp[0] = (void*) &mpi_board.slices - (void*) &mpi_board;
+    mpi_aq_board_disp[1] = (void*) &mpi_board.size - (void*) &mpi_board;
+    mpi_aq_board_disp[2] = (void*) &mpi_board.bits_occupied - (void*) &mpi_board;
+    mpi_aq_board_disp[3] = (void*) &mpi_board.slices_occupied - (void*) &mpi_board;
+    MPI_Type_create_struct(4, mpi_aq_board_blocklen, mpi_aq_board_disp, 
+            mpi_aq_board_blocktype, &mpi_aq_board_type);
+    MPI_Type_commit(&mpi_aq_board_type);
+
+    // Send the solution set over.
+    struct aq_board gathered_solution_set[mpi_nprocs][MAX_SOLUTION_SET_SIZE];
+    int gathered_num_solutions[mpi_nprocs];
+    int gathered_max_queens[mpi_nprocs];
+    MPI_Gather(&num_solutions, 1, MPI_INT, &gathered_num_solutions, 1, MPI_INT, 0,
+            MPI_COMM_WORLD);
+    MPI_Gather(&max_queens, 1, MPI_INT, &gathered_max_queens, 1, MPI_INT, 0,
+            MPI_COMM_WORLD);
+    MPI_Gather(solution_set, MAX_SOLUTION_SET_SIZE, mpi_aq_board_type,
+            &gathered_solution_set[mpi_rank], MAX_SOLUTION_SET_SIZE,
+            mpi_aq_board_type, 0,
+            MPI_COMM_WORLD);
+    MPI_Reduce(&max_queens, &all_max_queens, 1, MPI_INT, MPI_MAX, 0,
+            MPI_COMM_WORLD);
+
+    // Integrate all the solutions.
+    if (mpi_rank == 0) {
+        for (i = 0; i < mpi_nprocs; ++i) {
+            LOG("gatherResults", "Number of solutions from %d: %d", i,
+                    gathered_num_solutions[i]);
+        }
+
+        // Remove the duplicates.
+        all_num_solutions = 0;
+        for (i = 0; i < mpi_nprocs; ++i) {
+            for (j = 0; j < gathered_num_solutions[i] &&
+                            gathered_max_queens[i] == all_max_queens; ++j) {
+                has_existing_solutions = 0;
+                for (k = 0; k < all_num_solutions; ++k) {
+                    if (boards_are_equal(&gathered_solution_set[i][j], &all_solution_set[k])) {
+                        has_existing_solutions++;
+                        break;
+                    }
+                }
+
+                if (!has_existing_solutions) {
+                    all_solution_set[all_num_solutions] = gathered_solution_set[i][j];
+                    all_num_solutions++;
+                }
+            }
+        }
+
+        printf("Number of solutions: %d\n", all_num_solutions);
+        printf("Maximum number of queens: %d\n", all_max_queens);
+        
+        for (i = 0; i < all_num_solutions; ++i) {
+            board_print(&all_solution_set[i]);
+        }
+    }
+}
+
+/**
  * Runs the Aggressive Queens algorithm.
  */
 static inline
@@ -142,7 +232,7 @@ void godFunction(struct program_args *args) {
     // Prepare the task stack.
     struct aq_stack stack = prepareTaskStack(args->N);
     struct aq_stack stack_applied = stack_new();
-    struct aq_board solution_set[4096];
+    struct aq_board solution_set[MAX_SOLUTION_SET_SIZE];
     struct aq_move move;
     struct aq_move next_move;
     struct aq_move undo_move;
@@ -155,12 +245,6 @@ void godFunction(struct program_args *args) {
     int depth = 0;
     int i = 0;
     int j = 0;
-
-    // MPI information.
-    int mpi_rank;
-    int mpi_nprocs;
-    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
 
     // Some debugging information...
     LOG("godFunction", "Board info: bits_occupied = %d, slices_occupied = %d\n",
@@ -229,9 +313,11 @@ void godFunction(struct program_args *args) {
                     // Even though some of these conditions imply each other,
                     // they are included for performance reasons.
                     if (!board_is_occupied(&board, i, j)) {
-                            num_attacks = board_cell_count_attacks(&board, i, j);
-                            if (num_attacks != -1 && num_attacks <= args->k &&
-                                board_simulate_max_attacks(&board, i, j) <= args->k) {
+                        num_attacks = args->w ?
+                            board_cell_count_attacks_wrap(&board, i, j) :
+                            board_cell_count_attacks(&board, i, j);
+                        if (num_attacks != -1 && num_attacks <= args->k &&
+                            board_simulate_max_attacks(&board, i, j) <= args->k) {
                             next_move.row = i;
                             next_move.col = j;
                             next_move.applied = 0;
@@ -258,67 +344,7 @@ void godFunction(struct program_args *args) {
         }
     }
 
-    // Declare a new type to MPI.
-    struct aq_board mpi_board;
-    MPI_Datatype mpi_aq_board_type;
-    int mpi_aq_board_blocklen[4] = { AQ_BOARD_SLICES, 1, 1, 1 };
-    MPI_Datatype mpi_aq_board_blocktype[4] = {
-        MPI_UINT64_T,
-        MPI_INT,
-        MPI_INT,
-        MPI_INT
-    };
-    MPI_Aint mpi_aq_board_disp[4];
-    mpi_aq_board_disp[0] = (void*) &mpi_board.slices - (void*) &mpi_board;
-    mpi_aq_board_disp[1] = (void*) &mpi_board.size - (void*) &mpi_board;
-    mpi_aq_board_disp[2] = (void*) &mpi_board.bits_occupied - (void*) &mpi_board;
-    mpi_aq_board_disp[3] = (void*) &mpi_board.slices_occupied - (void*) &mpi_board;
-    MPI_Type_create_struct(4, mpi_aq_board_blocklen, mpi_aq_board_disp, 
-            mpi_aq_board_blocktype, &mpi_aq_board_type);
-    MPI_Type_commit(&mpi_aq_board_type);
-
-    // Send the solution set over.
-    struct aq_board gathered_solution_set[mpi_nprocs][4096];
-    int gathered_num_solutions[mpi_nprocs];
-    MPI_Gather(&num_solutions, 1, MPI_INT, &gathered_num_solutions, 1, MPI_INT, 0,
-            MPI_COMM_WORLD);
-    MPI_Gather(solution_set, 4096, mpi_aq_board_type,
-            &gathered_solution_set[mpi_rank], 4096, mpi_aq_board_type, 0,
-            MPI_COMM_WORLD);
-
-    // Integrate all the solutions.
-    if (mpi_rank == 0) {
-        for (int i = 0; i < mpi_nprocs; ++i) {
-            printf("Number of solutions from %d: %d\n", i, gathered_num_solutions[i]);
-        }
-
-        // Remove the duplicates.
-        struct aq_board all_solution_set[4096];
-        int all_num_solutions = 0;
-        for (i = 0; i < mpi_nprocs; ++i) {
-            for (j = 0; j < gathered_num_solutions[i]; ++j) {
-                has_existing_solutions = 0;
-                for (int k = 0; k < all_num_solutions; ++k) {
-                    if (boards_are_equal(&gathered_solution_set[i][j], &all_solution_set[k])) {
-                        has_existing_solutions++;
-                        break;
-                    }
-                }
-
-                if (!has_existing_solutions) {
-                    all_solution_set[all_num_solutions] = gathered_solution_set[i][j];
-                    all_num_solutions++;
-                }
-            }
-        }
-
-        printf("Number of solutions: %d\n", all_num_solutions);
-        printf("Maximum number of queens: %d\n", max_queens);
-        
-        for (i = 0; i < all_num_solutions; ++i) {
-            board_print(&all_solution_set[i]);
-        }
-    }
+    gatherResults(num_solutions, max_queens, solution_set);
 }
 
 /**
