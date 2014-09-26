@@ -14,5 +14,6 @@ extern struct aq_move stack_peek(struct aq_stack*);
 extern void stack_clear(struct aq_stack*);
 extern int stack_empty(struct aq_stack*);
 extern int stack_count(struct aq_stack*);
+extern void stack_dump(struct aq_stack*);
 
 /* vim: set ts=4 sw=4 et: */

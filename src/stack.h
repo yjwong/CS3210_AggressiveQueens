@@ -117,6 +117,17 @@ int stack_count(struct aq_stack *stack) {
     return stack->top + 1;
 }
 
+/**
+ * Dumps the contents of a stack.
+ */
+inline
+void stack_dump(struct aq_stack *stack) {
+    for (int i = 0; i <= stack->top; ++i) {
+        LOG("stack_dump", "row=%d, col=%d, depth=%d", stack->stack[i].row,
+                stack->stack[i].col, stack->stack[i].depth);
+    }
+}
+
 #endif /* AQ_STACK_H_ */
 
 /* vim: set ts=4 sw=4 et: */

@@ -84,7 +84,7 @@ int readProgramArgs(int argc, char* argv[], struct program_args* program_args) {
     }
 
     // Check if the values are sane.
-    if (program_args->N <= 2) {
+    if (program_args->N <= 1) {
         fprintf(stderr, "N must be equal or larger than 3.\n");
         return EXIT_ARGS_INVALID;
     }
@@ -144,6 +144,7 @@ void godFunction(struct program_args *args) {
     int max_attacks = 0;
     int moves_generated = 0;
     int has_existing_solutions = 0;
+    int depth = 0;
     int i = 0;
     int j = 0;
 
@@ -153,24 +154,24 @@ void godFunction(struct program_args *args) {
 
     // Perform a depth first search.
     while (!stack_empty(&stack)) {
+        LOG("godFunction", "Dump of working stack:");
+        //stack_dump(&stack);
+        LOG("godFunction", "Dump of applied stack:");
+        //stack_dump(&stack_applied);
         move = stack_pop(&stack);
         if (!move.applied) {
-            while (1) {
-                num_attacks = board_cell_count_attacks(&board, move.row, move.col);
-                if (num_attacks != -1 && num_attacks <= args->k) {
-                    break;
-                }
-
-                undo_move = stack_pop(&stack_applied);
-                move_undo(&board, &undo_move);
-                LOG("godFunction", "Undoing move %d, %d", undo_move.row,
-                        undo_move.col);
+            num_attacks = board_cell_count_attacks(&board, move.row, move.col);
+            LOG("godFunction", "num_attacks=%d", num_attacks);
+            if (num_attacks == -1 || num_attacks > args->k) {
+                continue;
             }
 
             // We only apply if we won't get attacked.
-            LOG("godFunction", "Applying move %d, %d", move.row, move.col);
-            move_apply(&board, &move);
+            LOG("godFunction", "Applying move %d, %d, depth=%d, move.depth=%d",
+                    move.row, move.col, depth, move.depth);
+            move_apply(&board, &move, move.depth);
             stack_push(&stack_applied, move);
+            depth = move.depth;
             //board_print(&board);
             
             // Accumate solutions.
@@ -210,8 +211,9 @@ void godFunction(struct program_args *args) {
                         next_move.row = i;
                         next_move.col = j;
                         next_move.applied = 0;
+                        next_move.depth = depth + 1;
 
-                        LOG("godFunction", "Generating move %d, %d", i, j);
+                        LOG("godFunction", "Generating move %d, %d, depth=%d", i, j, next_move.depth);
                         stack_push(&stack, next_move);
                         moves_generated++;
                     }
@@ -220,10 +222,28 @@ void godFunction(struct program_args *args) {
 
             // No more moves can be generated. Let's backtrack!
             if (!moves_generated) {
-               undo_move = stack_pop(&stack_applied);
-               move_undo(&board, &undo_move);
-               LOG("godFunction", "Undoing move %d, %d", undo_move.row,
-                       undo_move.col);
+                undo_move = stack_pop(&stack_applied);
+                move_undo(&board, &undo_move);
+                LOG("godFunction", "No more moves, undoing move %d, %d, depth=%d",
+                        undo_move.row, undo_move.col, depth);
+            } else {
+                depth++;
+            }
+
+            // Discard impossible moves.
+            while (!stack_empty(&stack_applied)) {
+                next_move = stack_peek(&stack);
+                undo_move = stack_peek(&stack_applied);
+
+                if (undo_move.depth >= next_move.depth) {
+                    stack_pop(&stack_applied);
+                    move_undo(&board, &undo_move);
+                    LOG("godFunction", "Undoing move %d, %d, depth=%d", undo_move.row,
+                            undo_move.col, depth);
+                } else {
+                    depth--;
+                    break;
+                }
             }
         }
     }

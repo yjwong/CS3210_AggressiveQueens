@@ -17,15 +17,17 @@ struct aq_move {
     int row;
     int col;
     int applied;
+    int depth;
 };
 
 /**
  * Applies a move to a specific board.
  */
 inline
-void move_apply(struct aq_board *board, struct aq_move *move) {
+void move_apply(struct aq_board *board, struct aq_move *move, int depth) {
     board_set_occupied(board, move->row, move->col);
     move->applied = 1;
+    move->depth = depth;
 }
 
 /**
