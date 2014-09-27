@@ -23,6 +23,7 @@
 
 static const int NUM_REQUIRED_ARGS = 5;
 static const int MAX_SOLUTION_SET_SIZE = 4096;
+static const int MAX_MPI_PROCS = 64;
 
 static const int EXIT_OK = 0;
 static const int EXIT_NUM_ARGS_INCORRECT = 1;
@@ -42,9 +43,35 @@ struct program_args {
 /**
  * Function prototypes.
  */
+void expandStackSize();
 int readProgramArgs(int, char**, struct program_args*);
 static inline void godFunction(struct program_args*);
 static inline void gatherResults(int, int, struct aq_board*);
+
+/**
+ * We need more stack size than the default.
+ */
+void expandStackSize() {
+    // Set to 64MB.
+    const rlim_t stack_size = 64L * 1024L * 1024L;
+    struct rlimit rl;
+    int result;
+
+    result = getrlimit(RLIMIT_STACK, &rl);
+    if (result == 0) {
+        if (rl.rlim_cur < stack_size) {
+            rl.rlim_cur = stack_size;
+            result = setrlimit(RLIMIT_STACK, &rl);
+            if (result != 0) {
+                fprintf(stderr, "%s: Failed to increase stack size (errno %d)\n",
+                        "expandStackSize", result);
+            }
+        }
+    } else {
+        fprintf(stderr, "%s: Failed to increase stack size (errno %d)\n",
+                "expandStackSize", result);
+    }
+}
 
 /**
  * Reads the arguments for the program.
@@ -140,15 +167,24 @@ void gatherResults(int num_solutions, int max_queens,
     int i, j, k;
     int has_existing_solutions;
 
+    struct aq_board all_solution_set[MAX_SOLUTION_SET_SIZE];
     int all_num_solutions;
     int all_max_queens;
-    struct aq_board all_solution_set[MAX_SOLUTION_SET_SIZE];
+
+    struct aq_board gathered_solution_set[MAX_MPI_PROCS][MAX_SOLUTION_SET_SIZE];
+    int gathered_num_solutions[MAX_MPI_PROCS];
+    int gathered_max_queens[MAX_MPI_PROCS];
 
     // MPI information.
     int mpi_rank;
     int mpi_nprocs;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
+
+#ifndef NDEBUG
+    assert(mpi_nprocs < MAX_MPI_PROCS &&
+           "Consider increasing MAX_MPI_PROCS");
+#endif
 
     // Declare a new type to MPI.
     struct aq_board mpi_board;
@@ -170,9 +206,6 @@ void gatherResults(int num_solutions, int max_queens,
     MPI_Type_commit(&mpi_aq_board_type);
 
     // Send the solution set over.
-    struct aq_board gathered_solution_set[mpi_nprocs][MAX_SOLUTION_SET_SIZE];
-    int gathered_num_solutions[mpi_nprocs];
-    int gathered_max_queens[mpi_nprocs];
     MPI_Gather(&num_solutions, 1, MPI_INT, &gathered_num_solutions, 1, MPI_INT, 0,
             MPI_COMM_WORLD);
     MPI_Gather(&max_queens, 1, MPI_INT, &gathered_max_queens, 1, MPI_INT, 0,
@@ -362,7 +395,13 @@ void godFunction(struct program_args *args) {
  */
 int main(int argc, char* argv[]) {
     struct program_args args;
-    int retval = readProgramArgs(argc, argv, &args);
+    int retval;
+
+    // But first, let me expand the stack size.
+    expandStackSize();
+
+    // Read our arguments!
+    retval = readProgramArgs(argc, argv, &args);
     if (retval != EXIT_OK) {
         return retval;
     }
