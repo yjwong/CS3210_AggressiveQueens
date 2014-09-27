@@ -19,19 +19,10 @@
  * to 64-bits to play with, effectively restricting board sizes to a max of 8.
  * 
  * To compensate, we slice up the bit configurations across few uint64_ts.
- * The default value of 25 allows for board sizes up to 40
- * (40 * 40 = 1600 / 64 = 25).
+ * The default value of 4 allows for board sizes up to 16
+ * (16 * 16 = 256 / 64 = 4).
  */
-#define AQ_BOARD_SLICES 25
-
-/**
- * Defines the number of simulation boards that can be used to check the number
- * of times a row or column on the board can be attacked.
- *
- * The default of 1024 boards should be sufficient for values of k up to 32 and
- * board sizes up to 32.
- */
-#define AQ_SIMULATION_BOARDS 1024
+#define AQ_BOARD_SLICES 4
 
 /**
  * A structure that represents a chess board.
@@ -337,15 +328,15 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     int attack_count = 0;
     int attacks[20];
     int bs = board->size * board->size;
-    for (int i = 0; i < 20; i++) {
-        attacks[i] = -1;    
-    }    
     
-
     // We short circuit if the slot is already occupied.
     if (board_is_occupied(board, row, col)) {
         return -1;
     }
+
+	for (int i = 0; i < 20; i++) {
+        attacks[i] = -1;    
+    }    
 
     // Check occupied positions on row.
     // Left direction.
@@ -470,7 +461,7 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     // Bottom left direction.
     i = row;
     j = col;
-    while (i < board->size && j >= -1) {
+    while (i < board->size && j > -1) {
         if (board_is_occupied(board, i, j)) {
             if(attacks[16] == -1) {
                 attacks[16] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
@@ -491,7 +482,7 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
             j += board->size;        
         }     
     
-        while (i < board->size && j >= -1) {
+        while (i < board->size && j > -1) {
             if (board_is_occupied(board, i, j)) {
                 if(attacks[18] == -1) {
                     attacks[18] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
@@ -551,7 +542,7 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
                 b = attacks[13];
             } else if (attacks[12] != -1) {
                 b = attacks[12];
-            } else if (attacks[11] != -1) {
+            } else {
                 b = attacks[11];
             }
         }
@@ -562,7 +553,7 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
                 b = attacks[12];
             } else if (attacks[13] != -1) {
                 b = attacks[13];
-            } else if (attacks[9] != -1) {
+            } else {
                 b = attacks[9];
             }
         } else {
@@ -581,7 +572,7 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
                 d = attacks[19];
             } else if (attacks[18] != -1) {
                 d = attacks[18];
-            } else if (attacks[17] != -1) {
+            } else {
                 d = attacks[17];
             }
         }
@@ -592,7 +583,7 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
                 d = attacks[18];
             } else if (attacks[19] != -1) {
                 d = attacks[19];
-            } else if (attacks[15] != -1) {
+            } else {
                 d = attacks[15];
             }
         } else {
@@ -602,13 +593,12 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     }
 
     if (a != -1) attack_count++;
-    if (b != -1 && b != a) attack_count ++;
+    if (b != -1 && b != a) attack_count++;
     if (c != -1 && c != a && c != b) attack_count++;
-    if (d != -1 && d != c && d != b && d != a) attack_count++;
+    if (d != -1 && d != a && d != b && d != c) attack_count++;
 
     return attack_count;
 }
-
 
 /**
  * Returns the maximum number of attacks on every occupied position on the
