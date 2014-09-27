@@ -15,7 +15,7 @@
 
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <mpi/mpi.h>
+#include <mpi.h>
 
 #include "stack.h"
 #include "board.h"

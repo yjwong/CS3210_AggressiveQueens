@@ -111,7 +111,7 @@ AS_IF([test x"$_ax_prog_cc_mpi_mpi_wanted" = xno],
     # Check for header
     AS_IF([test x"$_ax_prog_cc_mpi_mpi_found" = xyes], [
       AC_MSG_CHECKING([for mpi.h])
-      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <mpi/mpi.h>])],
+      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <mpi.h>])],
         [ AC_MSG_RESULT(yes)],
         [ AC_MSG_RESULT(no)
          _ax_prog_cc_mpi_mpi_found=no
