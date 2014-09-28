@@ -8,8 +8,6 @@
 #include "board.h"
 
 extern struct aq_board board_new(int);
-extern int board_get_slice_id(struct aq_board*, int, int);
-extern int board_get_offset_in_slice(struct aq_board*, int, int);
 extern int board_is_occupied(struct aq_board*, int, int);
 extern void board_set_occupied(struct aq_board*, int, int);
 extern void board_set_row_occupied(struct aq_board*, int);

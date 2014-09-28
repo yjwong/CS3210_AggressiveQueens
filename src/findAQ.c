@@ -196,19 +196,15 @@ void gatherResults(int num_solutions, int max_queens,
     // Declare a new type to MPI.
     struct aq_board mpi_board;
     MPI_Datatype mpi_aq_board_type;
-    int mpi_aq_board_blocklen[4] = { AQ_BOARD_SLICES, 1, 1, 1 };
-    MPI_Datatype mpi_aq_board_blocktype[4] = {
-        MPI_UINT64_T,
-        MPI_INT,
-        MPI_INT,
+    int mpi_aq_board_blocklen[2] = { AQ_BOARD_SLOTS, 1 };
+    MPI_Datatype mpi_aq_board_blocktype[2] = {
+        MPI_CHAR,
         MPI_INT
     };
-    MPI_Aint mpi_aq_board_disp[4];
-    mpi_aq_board_disp[0] = (void*) &mpi_board.slices - (void*) &mpi_board;
+    MPI_Aint mpi_aq_board_disp[2];
+    mpi_aq_board_disp[0] = (void*) &mpi_board.slots - (void*) &mpi_board;
     mpi_aq_board_disp[1] = (void*) &mpi_board.size - (void*) &mpi_board;
-    mpi_aq_board_disp[2] = (void*) &mpi_board.bits_occupied - (void*) &mpi_board;
-    mpi_aq_board_disp[3] = (void*) &mpi_board.slices_occupied - (void*) &mpi_board;
-    MPI_Type_create_struct(4, mpi_aq_board_blocklen, mpi_aq_board_disp, 
+    MPI_Type_create_struct(2, mpi_aq_board_blocklen, mpi_aq_board_disp,
             mpi_aq_board_blocktype, &mpi_aq_board_type);
     MPI_Type_commit(&mpi_aq_board_type);
 
@@ -251,6 +247,8 @@ void gatherResults(int num_solutions, int max_queens,
             }
         }
 
+        // Print the solutions.
+        /*
         if (args->l && all_num_solutions > 0) {
             for (i = 0; i < all_num_solutions; ++i) {
                 printf("%d,%d:%d:", args->N, args->k, all_max_queens);
@@ -269,15 +267,14 @@ void gatherResults(int num_solutions, int max_queens,
         } else {
             printf("%d,%d:%d:\n", args->N, args->k, all_max_queens);
         }
+        */
 
-        /*
         printf("Number of solutions: %d\n", all_num_solutions);
         printf("Maximum number of queens: %d\n", all_max_queens);
         
         for (i = 0; i < all_num_solutions; ++i) {
             board_print(&all_solution_set[i]);
         }
-        */
     }
 }
 

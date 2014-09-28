@@ -9,6 +9,7 @@
 #define AQ_STACK_H_
 
 #include <errno.h>
+#include "log.h"
 #include "move.h"
 
 /**

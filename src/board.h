@@ -8,31 +8,22 @@
 #ifndef AQ_BOARD_H_
 #define AQ_BOARD_H_
 
+#include <string.h>
 #include <stdio.h>
-#include <math.h>
-#include <stdint.h>
-#include <assert.h>
-#include "log.h"
 
 /**
- * Since each board configuration is stored as a bit string, we only have up
- * to 64-bits to play with, effectively restricting board sizes to a max of 8.
- * 
- * To compensate, we slice up the bit configurations across few uint64_ts.
- * The default value of 4 allows for board sizes up to 16
- * (16 * 16 = 256 / 64 = 4).
+ * Determines the number of slots on the board. For an 8x8 board, 64 slots is
+ * required. The default is sufficient for board sizes up to 11x11.
  */
-#define AQ_BOARD_SLICES 4
+#define AQ_BOARD_SLOTS 128
 
 /**
  * A structure that represents a chess board.
  * Contains bookkeeping information.
  */
 struct aq_board {
-	uint64_t slices[AQ_BOARD_SLICES];
-	int size;
-	int bits_occupied;
-	int slices_occupied;
+    char slots[AQ_BOARD_SLOTS];
+    int size;
 };
 
 /**
@@ -40,30 +31,9 @@ struct aq_board {
  */
 inline
 struct aq_board board_new(int size) {
-#ifndef NDEBUG
-    int slices_required = ceil(size * size / 64.0);
-    assert(slices_required <= AQ_BOARD_SLICES &&
-           "Try increasing AQ_BOARD_SLICES?");
-#endif
-
-    struct aq_board board = { {0}, 0, 0, 0 };
-    board.bits_occupied = size * size;
-    board.slices_occupied = (board.bits_occupied + 64 - 1) >> 6;
+    struct aq_board board = { {0}, 0 };
     board.size = size;
     return board;
-}
-
-inline
-int board_get_slice_id(struct aq_board *board, int row, int col) {
-    int offset = row * board->size + col;
-    int slice_id = offset >> 6;
-    return slice_id;
-}
-
-inline
-int board_get_offset_in_slice(struct aq_board *board, int row, int col) {
-    int offset = row * board->size + col;
-    return offset & 63;
 }
 
 /**
@@ -72,14 +42,7 @@ int board_get_offset_in_slice(struct aq_board *board, int row, int col) {
  */
 inline
 int board_is_occupied(struct aq_board *board, int row, int col) {
-	int slice_id = board_get_slice_id(board, row, col);
-	int offset = board_get_offset_in_slice(board, row, col);
-
-	// Select the correct value.
-	uint64_t mask = 0x8000000000000000ULL >> offset;
-	uint64_t value = board->slices[slice_id] & mask;
-
-	return __builtin_ffsll(value);
+    return board->slots[row * board->size + col];
 }
 
 /**
@@ -87,111 +50,7 @@ int board_is_occupied(struct aq_board *board, int row, int col) {
  */
 inline
 void board_set_occupied(struct aq_board *board, int row, int col) {
-    int slice_id = board_get_slice_id(board, row, col);
-    int offset = board_get_offset_in_slice(board, row, col);
-
-    // Select the correct value.
-    uint64_t mask = 0x8000000000000000ULL >> offset;
-    board->slices[slice_id] |= mask;
-}
-
-/**
- * Sets the value of a specified row on the board.
- */
-inline
-void board_set_row_occupied(struct aq_board *board, int row) {
-#ifndef NDEBUG
-    assert(row < board->size);
-#endif
-
-    int start_slice_id = board_get_slice_id(board, row, 0);
-    int start_offset = board_get_offset_in_slice(board, row, 0);
-    int end_slice_id = board_get_slice_id(board, row, board->size - 1);
-    int end_offset = board_get_offset_in_slice(board, row, board->size - 1);
-
-    if (start_slice_id == end_slice_id) {
-        // XXX: This effectively limits the board size to 63x63.
-        uint64_t mask = (0xFFFFFFFFFFFFFFFFULL >> start_offset) ^
-                        ~(0xFFFFFFFFFFFFFFFFULL << (63 - end_offset));
-        board->slices[start_slice_id] |= mask;
-    } else {
-        uint64_t start_mask = (0xFFFFFFFFFFFFFFFFULL >> start_offset);
-        uint64_t end_mask = (0xFFFFFFFFFFFFFFFFULL << (63 - end_offset));
-        board->slices[start_slice_id] |= start_mask;
-        board->slices[end_slice_id] |= end_mask;
-    }
-}
-
-/**
- * Sets the value of a specified column on the board.
- */
-inline
-void board_set_col_occupied(struct aq_board *board, int col) {
-#ifndef NDEBUG
-    assert(col < board->size);
-#endif
-
-    // Compute mask for a specified slice.
-    for (int i = 0; i < board->slices_occupied; ++i){
-        uint64_t mask = 0x8000000000000000ULL;
-        for (int j = col; j < 64; j += board->size) {
-            mask >>= board->size;
-            mask |= 0x8000000000000000ULL;
-        }
-
-        // Sometimes we may end up on the same row - we need to correct that.
-        int row = (i << 6) / board->size;
-        int slice_id = board_get_slice_id(board, row, col);
-        if (slice_id != i) {
-            row++;
-        }
-
-        int offset = (row * board->size + col) % 64 % board->size;
-        mask >>= offset;
-        board->slices[i] |= mask;
-    }
-}
-
-/**
- * Sets the value of a specified diagonal on the board.
- */
-inline
-void board_set_diag_occupied(struct aq_board *board, int row, int col) {
-    // I don't think there's an easy fast way to do this...
-    // Top left direction.
-    int i = row, j = col;
-    while (i >= 0 && j >= 0) {
-        board_set_occupied(board, i, j);
-        i--;
-        j--;
-    }
-
-    // Top right direction.
-    i = row;
-    j = col;
-    while (i >= 0 && j < board->size) {
-        board_set_occupied(board, i, j);
-        i--;
-        j++;
-    }
-
-    // Bottom left direction.
-    i = row;
-    j = col;
-    while (i < board->size && j >= 0) {
-        board_set_occupied(board, i, j);
-        i++;
-        j--;
-    }
-
-    // Bottom right direction.
-    i = row;
-    j = col;
-    while (i < board->size && j < board->size) {
-        board_set_occupied(board, i, j);
-        i++;
-        j++;
-    }
+    board->slots[row * board->size + col] = 1;
 }
 
 /**
@@ -199,12 +58,7 @@ void board_set_diag_occupied(struct aq_board *board, int row, int col) {
  */
 inline
 void board_set_unoccupied(struct aq_board *board, int row, int col) {
-    int slice_id = board_get_slice_id(board, row, col);
-    int offset = board_get_offset_in_slice(board, row, col);
-
-    // Select the correct value.
-    uint64_t mask = 0x8000000000000000ULL >> offset;
-    board->slices[slice_id] &= ~mask;
+    board->slots[row * board->size + col] = 0;
 }
 
 /**
@@ -212,9 +66,7 @@ void board_set_unoccupied(struct aq_board *board, int row, int col) {
  */
 inline
 void board_clear(struct aq_board *board) {
-    for (int i = 0; i < board->slices_occupied; ++i) {
-        board->slices[i] = 0;
-    }
+    memset(board->slots, 0, AQ_BOARD_SLOTS);
 }
 
 /**
@@ -231,7 +83,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     }
     
     // Check occupied positions on row.
-    // Top direction.
+    // Left direction.
     for (int i = col; i >= 0; --i) {
         if (board_is_occupied(board, row, i)) {
             attack_count++;
@@ -239,7 +91,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
         }
     }
 
-    // Bottom direction.
+    // Right direction.
     for (int i = col; i < board->size; ++i) {
         if (board_is_occupied(board, row, i)) {
             attack_count++;
@@ -248,7 +100,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
     }
 
     // Check occupied positions on column.
-    // Left direction.
+    // Top direction.
     for (int i = row; i >= 0; --i) {
         if (board_is_occupied(board, i, col)) {
             attack_count++;
@@ -256,7 +108,7 @@ int board_cell_count_attacks(struct aq_board *board, int row, int col) {
         }
     }
 
-    // Right direction.
+    // Bottom direction.
     for (int i = row; i < board->size; ++i) {
         if (board_is_occupied(board, i, col)) {
             attack_count++;
@@ -343,9 +195,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     for (int i = row; i >= 0; --i) {
         if (board_is_occupied(board, i, col)) {
             if(attacks[0] == -1) {
-                attacks[0] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);
+                attacks[0] = i * board->size + col;
             } else {
-                attacks[1] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);
+                attacks[1] = i * board->size + col;
             }
         }
     }
@@ -354,9 +206,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     for (int i = row; i < board->size; ++i) {
         if (board_is_occupied(board, i, col)) {
             if(attacks[2] == -1) {
-                attacks[2] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);
+                attacks[2] = i * board->size + col;
             } else {
-                attacks[3] = board_get_slice_id(board, i, col) * bs + board_get_offset_in_slice(board, i, col);            
+                attacks[3] = i * board->size + col;
             }
         }
     }
@@ -366,9 +218,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     for (int i = col; i >= 0; --i) {
         if (board_is_occupied(board, row, i)) {
             if(attacks[4] == -1) {
-                attacks[4] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);
+                attacks[4] = row * board->size + i;
             } else {
-                attacks[5] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);          
+                attacks[5] = row * board->size + i;
             }
         }
     }
@@ -377,9 +229,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     for (int i = col; i < board->size; ++i) {
         if (board_is_occupied(board, row, i)) {
             if(attacks[6] == -1) {
-                attacks[6] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);
+                attacks[6] = row * board->size + i;
             } else {
-                attacks[7] = board_get_slice_id(board, row, i) * bs + board_get_offset_in_slice(board, row, i);            
+                attacks[7] = row * board->size + i;
             }
         }
     }
@@ -391,9 +243,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     while (i >= 0 && j >= 0) {
         if (board_is_occupied(board, i, j)) {
             if(attacks[8] == -1) {
-                attacks[8] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                attacks[8] = i * board->size + j;
             } else {
-                attacks[9] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                attacks[9] = i * board->size + j;
             }
         }
         
@@ -408,9 +260,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     while (i < board->size && j < board->size) {
         if (board_is_occupied(board, i, j)) {
             if(attacks[10] == -1) {
-                attacks[10] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                attacks[10] = i * board->size + j;
             } else {
-                attacks[11] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                attacks[11] = i * board->size + j;
             }
         }
         
@@ -429,9 +281,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
         while (i < board->size && j < board->size) {
             if (board_is_occupied(board, i, j)) {
                 if(attacks[12] == -1) {
-                    attacks[12] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                    attacks[12] = i * board->size + j;
                 } else {
-                    attacks[13] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                    attacks[13] = i * board->size + j;
                 }
             }
             
@@ -448,9 +300,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     while (i >= 0 && j < board->size) {
         if (board_is_occupied(board, i, j)) {
             if(attacks[14] == -1) {
-                attacks[14] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                attacks[14] = i * board->size + j;
             } else {
-                attacks[15] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                attacks[15] = i * board->size + j;
             }
         }
         
@@ -464,9 +316,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     while (i < board->size && j > -1) {
         if (board_is_occupied(board, i, j)) {
             if(attacks[16] == -1) {
-                attacks[16] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                attacks[16] = i * board->size + j;
             } else {
-                attacks[17] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                attacks[17] = i * board->size + j;
             }
         }
         
@@ -485,9 +337,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
         while (i < board->size && j > -1) {
             if (board_is_occupied(board, i, j)) {
                 if(attacks[18] == -1) {
-                    attacks[18] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);
+                    attacks[18] = i * board->size + j;
                 } else {
-                    attacks[19] = board_get_slice_id(board, i, j) * bs + board_get_offset_in_slice(board, i, j);          
+                    attacks[19] = i * board->size + j;
                 }
             }
             
@@ -677,25 +529,25 @@ int board_all_has_same_attacks(struct aq_board *board) {
 inline
 int board_count_occupied(struct aq_board *board) {
     int count = 0;
-    for (int i = 0; i < board->slices_occupied; ++i) {
-        // Praise to be god of SSE4.2.
-        count += __builtin_popcountll(board->slices[i]);
+    int slots_max = board->size * board->size;
+    for (int i = 0; i < slots_max; ++i) {
+        if (board->slots[i]) {
+            count++;
+        }
     }
 
     return count;
 }
+
 
 /**
  * Checks if two boards are equal.
  */
 inline
 int boards_are_equal(struct aq_board *b1, struct aq_board *b2) {
-#ifndef NDEBUG
-    assert(b1->size == b2->size);
-#endif
-
-    for (int i = 0; i < b1->size; ++i) {
-        if (b1->slices[i] != b2->slices[i]) {
+    int slots_max = b1->size * b1->size;
+    for (int i = 0; i < slots_max; ++i) {
+        if (b1->slots[i] != b2->slots[i]) {
             return 0;
         }
     }
