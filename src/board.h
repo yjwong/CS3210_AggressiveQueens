@@ -63,7 +63,7 @@ int board_get_slice_id(struct aq_board *board, int row, int col) {
 inline
 int board_get_offset_in_slice(struct aq_board *board, int row, int col) {
     int offset = row * board->size + col;
-    return offset % 64;
+    return offset & 63;
 }
 
 /**
