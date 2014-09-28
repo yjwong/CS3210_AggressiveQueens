@@ -268,6 +268,7 @@ void godFunction(struct program_args *args) {
     struct aq_board solution_set[MAX_SOLUTION_SET_SIZE];
     struct aq_move move;
     struct aq_move next_move;
+    struct aq_move* undo_move_ptr;
     struct aq_move undo_move;
     int num_solutions = 0;
     int num_queens = 0;
@@ -279,102 +280,93 @@ void godFunction(struct program_args *args) {
     int i = 0;
     int j = 0;
 
-    // Some debugging information...
-    LOG("godFunction", "Board info: bits_occupied = %d, slices_occupied = %d\n",
-            board.bits_occupied, board.slices_occupied);
-
-    stack_dump(&stack);
     // Perform a depth first search.
     while (!stack_empty(&stack)) {
-        LOG("godFunction", "Dump of working stack:");
-        //stack_dump(&stack);
-        LOG("godFunction", "Dump of applied stack:");
-        //stack_dump(&stack_applied);
         move = stack_pop(&stack);
-        if (!move.applied) {
-            // Discard impossible moves.
-            while (!stack_empty(&stack_applied)) {
-                undo_move = stack_peek(&stack_applied);
-                if (undo_move.depth >= move.depth) {
-                    stack_pop(&stack_applied);
-                    move_undo(&board, &undo_move);
-                    LOG("godFunction", "Undoing move %d, %d, depth=%d", undo_move.row,
-                            undo_move.col, depth);
-                } else {
-                    depth--;
-                    break;
-                }
-            }
-            
-            // We only apply if we won't get attacked.
-            LOG("godFunction", "Applying move %d, %d, depth=%d, move.depth=%d",
-                    move.row, move.col, depth, move.depth);
-            move_apply(&board, &move, move.depth);
-            stack_push(&stack_applied, move);
-            depth = move.depth;
-            //board_print(&board);
-            
-            // Accumate solutions.
-            num_queens = board_count_occupied(&board);
-            if (num_queens >= max_queens &&
-                board_max_attacks(&board) == args->k &&
-                board_all_has_same_attacks(&board)) {
-                LOG("godFunction", " ^ this is a solution");
-                if (num_queens > max_queens) {
-                    num_solutions = 1;
-                    solution_set[0] = board;
-                    max_queens = num_queens;
-                } else {
-                    has_existing_solutions = 0;
-                    for (i = 0; i < num_solutions; ++i) {
-                        if (boards_are_equal(&solution_set[i], &board)) {
-                            has_existing_solutions = 1;
-                        }
-                    }
 
-                    if (!has_existing_solutions) {
-                        solution_set[num_solutions] = board;
-                        num_solutions++;
-                    }
-                }
-            }
-
-            // Generate moves.
-            moves_generated = 0;
-            for (i = 0; i < args->N; ++i) {
-                for (j = 0; j < args->N; ++j) {
-                    // Even though some of these conditions imply each other,
-                    // they are included for performance reasons.
-                    if (!board_is_occupied(&board, i, j)) {
-                        num_attacks = args->w ?
-                            board_cell_count_attacks_wrap(&board, i, j) :
-                            board_cell_count_attacks(&board, i, j);
-                        if (num_attacks != -1 && num_attacks <= args->k &&
-                            board_simulate_max_attacks(&board, i, j) <= args->k) {
-                            next_move.row = i;
-                            next_move.col = j;
-                            next_move.applied = 0;
-                            next_move.depth = depth + 1;
-
-                            LOG("godFunction", "Generating move %d, %d, depth=%d", i, j, next_move.depth);
-                            stack_push(&stack, next_move);
-                            moves_generated++;
-                        }
-                    }
-                }
-            }
-
-            // No more moves can be generated. Let's backtrack!
-            if (!moves_generated) {
-                undo_move = stack_pop(&stack_applied);
-                move_undo(&board, &undo_move);
-                LOG("godFunction", "No more moves, undoing move %d, %d, depth=%d",
-                        undo_move.row, undo_move.col, depth);
+        // Discard impossible moves.
+        while (!stack_empty(&stack_applied)) {
+            undo_move_ptr = stack_peek_ptr(&stack_applied);
+            if (undo_move_ptr->depth >= move.depth) {
+                stack_pop(&stack_applied);
+                move_undo(&board, undo_move_ptr);
+                LOG("godFunction", "Undoing move %d, %d, depth=%d",
+                        undo_move_ptr->row, undo_move_ptr->col, depth);
             } else {
-                depth++;
+                depth--;
+                break;
             }
-
         }
+        
+        // We only apply if we won't get attacked.
+        LOG("godFunction", "Applying move %d, %d, depth=%d, move.depth=%d",
+                move.row, move.col, depth, move.depth);
+        move_apply(&board, &move, move.depth);
+        stack_push(&stack_applied, move);
+        depth = move.depth;
+        //board_print(&board);
+        
+        // Accumate solutions.
+        num_queens = board_count_occupied(&board);
+        if (num_queens >= max_queens &&
+            board_max_attacks(&board) == args->k &&
+            board_all_has_same_attacks(&board)) {
+            LOG("godFunction", " ^ this is a solution");
+            if (num_queens > max_queens) {
+                num_solutions = 1;
+                solution_set[0] = board;
+                max_queens = num_queens;
+            } else {
+                has_existing_solutions = 0;
+                for (i = 0; i < num_solutions; ++i) {
+                    if (boards_are_equal(&solution_set[i], &board)) {
+                        has_existing_solutions = 1;
+                    }
+                }
+
+                if (!has_existing_solutions) {
+                    solution_set[num_solutions] = board;
+                    num_solutions++;
+                }
+            }
+        }
+
+        // Generate moves.
+        moves_generated = 0;
+        for (i = 0; i < args->N; ++i) {
+            for (j = 0; j < args->N; ++j) {
+                // Even though some of these conditions imply each other,
+                // they are included for performance reasons.
+                if (move.row != i && move.col != j &&
+                    !board_is_occupied(&board, i, j)) {
+                    num_attacks = args->w ?
+                        board_cell_count_attacks_wrap(&board, i, j) :
+                        board_cell_count_attacks(&board, i, j);
+                    if (num_attacks != -1 && num_attacks <= args->k &&
+                        board_simulate_max_attacks(&board, i, j) <= args->k) {
+                        next_move.row = i;
+                        next_move.col = j;
+                        next_move.applied = 0;
+                        next_move.depth = depth + 1;
+
+                        LOG("godFunction", "Generating move %d, %d, depth=%d", i, j, next_move.depth);
+                        stack_push(&stack, next_move);
+                        moves_generated++;
+                    }
+                }
+            }
+        }
+
+        // No more moves can be generated. Let's backtrack!
+        if (!moves_generated) {
+            undo_move = stack_pop(&stack_applied);
+            move_undo(&board, &undo_move);
+            LOG("godFunction", "No more moves, undoing move %d, %d, depth=%d",
+                    undo_move.row, undo_move.col, depth);
+        } else {
+            depth++;
+        }
+
     }
 
     gatherResults(num_solutions, max_queens, solution_set);

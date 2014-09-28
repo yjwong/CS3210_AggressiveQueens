@@ -93,6 +93,16 @@ struct aq_move stack_peek(struct aq_stack *stack) {
     }
 }
 
+inline
+struct aq_move* stack_peek_ptr(struct aq_stack* stack) {
+    int top = stack->top;
+    if (top < 0) {
+        return NULL;
+    } else {
+        return &stack->stack[top];
+    }
+}
+
 /**
  * Clears the stack.
  */

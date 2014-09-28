@@ -17,14 +17,16 @@ else
 fi
 
 if [ $BUILD_TYPE = "debug" ]; then
-    CFLAGS="-g -O0"
+    CFLAGS="$CFLAGS -g -O0"
+elif [ $BUILD_TYPE = "profile" ]; then
+    CFLAGS="$CFLAGS -pg -g -fno-inline -O3 -DNDEBUG"
 elif [ $BUILD_TYPE = "release" ]; then
-    CFLAGS="-O3 -DNDEBUG"
+    CFLAGS="$CFLAGS -O3 -DNDEBUG"
 elif [ $BUILD_TYPE = "clean" ]; then
     make clean
     exit
 else
-    echo "Build type must be either \"debug\" or \"release\"."
+    echo "Build type must be either \"debug\", \"release\" or \"profile\"."
     exit
 fi
 
