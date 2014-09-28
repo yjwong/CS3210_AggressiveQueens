@@ -135,6 +135,8 @@ struct aq_stack prepareTaskStack(int N) {
     struct aq_move initial_move;
     int mpi_rank;
     int mpi_nprocs;
+    struct aq_move initial_moves[N * N];
+    int num_initial_moves = 0;
 
     MPI_Comm_size(MPI_COMM_WORLD, &mpi_nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -144,15 +146,18 @@ struct aq_stack prepareTaskStack(int N) {
     // Optimization: we only need to find one half the board.
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N - i; ++j) {
-            int proc_id = (i * N + j) % mpi_nprocs;
-            if (proc_id == mpi_rank) {
-                initial_move.row = i;
-                initial_move.col = j;
-                initial_move.applied = 0;
-                
-                LOG("prepareTaskStack", "[%d] Generating move %d, %d", proc_id, i, j);
-                stack_push(&stack, initial_move);
-            }
+            initial_move.row = i;
+            initial_move.col = j;
+            initial_move.applied = 0;
+            
+            initial_moves[num_initial_moves++] = initial_move;
+        }
+    }
+
+    for (int i = 0; i < num_initial_moves; ++i) {
+        int proc_id = i % mpi_nprocs;
+        if (proc_id == mpi_rank) {
+            stack_push(&stack, initial_moves[i]);
         }
     }
     
