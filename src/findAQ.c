@@ -141,8 +141,9 @@ struct aq_stack prepareTaskStack(int N) {
     LOG("prepareTaskStack", "MPI_Comm_size=%d, MPI_Comm_rank=%d", mpi_nprocs,
             mpi_rank);
 
+    // Optimization: we only need to find one half the board.
     for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
+        for (int j = 0; j < N - i; ++j) {
             int proc_id = (i * N + j) % mpi_nprocs;
             if (proc_id == mpi_rank) {
                 initial_move.row = i;
