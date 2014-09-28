@@ -504,8 +504,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
             j--;
         }  
     }
-    ///////////////////////////
-    if (attacks[0] == -1) {
+    
+	    ///////////////////////////	
+	if (attacks[0] == -1) {
         if (attacks[2] != -1) {
             attack_count++;
             if (attacks[3] != -1) {
@@ -513,8 +514,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
             }
         }
     } else {
+		attack_count++;
         if (attacks[2] != -1) {
-            attack_count += 2;        
+            attack_count++;        
         } else {
             if(attacks[1] != -1) {
                 attack_count++;            
@@ -530,8 +532,9 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
             }
         }
     } else {
+		attack_count++;
         if (attacks[6] != -1) {
-            attack_count += 2;        
+            attack_count++;        
         } else {
             if(attacks[5] != -1) {
                 attack_count++;            
@@ -602,9 +605,10 @@ int board_cell_count_attacks_wrap(struct aq_board *board, int row, int col) {
     }
 
     if (a != -1) attack_count++;
-    if (b != -1 && b != a) attack_count++;
+    if (b != -1) attack_count++;
     if (c != -1 && c != a && c != b) attack_count++;
-    if (d != -1 && d != a && d != b && d != c) attack_count++;
+    if (d != -1 && d != a && d != b) attack_count++;
+
 
     return attack_count;
 }
