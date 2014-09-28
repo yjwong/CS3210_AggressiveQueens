@@ -46,7 +46,8 @@ struct program_args {
 void expandStackSize();
 int readProgramArgs(int, char**, struct program_args*);
 static inline void godFunction(struct program_args*);
-static inline void gatherResults(int, int, struct aq_board*);
+static inline void gatherResults(int, int, struct aq_board*,
+        struct program_args*);
 
 /**
  * We need more stack size than the default.
@@ -169,7 +170,7 @@ struct aq_stack prepareTaskStack(int N) {
  */
 static inline
 void gatherResults(int num_solutions, int max_queens,
-        struct aq_board* solution_set) {
+        struct aq_board *solution_set, struct program_args *args) {
     int i, j, k;
     int has_existing_solutions;
 
@@ -250,12 +251,33 @@ void gatherResults(int num_solutions, int max_queens,
             }
         }
 
+        if (args->l && all_num_solutions > 0) {
+            for (i = 0; i < all_num_solutions; ++i) {
+                printf("%d,%d:%d:", args->N, args->k, all_max_queens);
+
+                for (j = 0; j < args->N; ++j) {
+                    for (k = 0; k < args->N; ++k) {
+                        if (board_is_occupied(&all_solution_set[i], j, k)) {
+                            printf("%d,", j * args->N + k);
+                        }
+                    }   
+                }
+
+                printf("\n");
+            }
+
+        } else {
+            printf("%d,%d:%d:\n", args->N, args->k, all_max_queens);
+        }
+
+        /*
         printf("Number of solutions: %d\n", all_num_solutions);
         printf("Maximum number of queens: %d\n", all_max_queens);
         
         for (i = 0; i < all_num_solutions; ++i) {
             board_print(&all_solution_set[i]);
         }
+        */
     }
 }
 
@@ -375,7 +397,7 @@ void godFunction(struct program_args *args) {
 
     }
 
-    gatherResults(num_solutions, max_queens, solution_set);
+    gatherResults(num_solutions, max_queens, solution_set, args);
 }
 
 /**
