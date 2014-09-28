@@ -218,15 +218,6 @@ void board_clear(struct aq_board *board) {
 }
 
 /**
- * Returns zero if the a position on the board is attackable less than or
- * equal to k number of times. Returns non-zero otherwise.
- */
-inline
-int board_cell_attacks_le(struct aq_board *board, int row, int col, int k) {
-
-}
-
-/**
  * Counts the number of times a position on the board is attackale.
  * Returns -1 if the position is already occupied by a piece.
  */
